@@ -1,0 +1,7 @@
+# STARTER container MySQL: listen on all interfaces (host/LAN access).
+# Port can be overridden at runtime via STARTER_MYSQL_PORT (entrypoint).
+[mysqld]
+bind-address = 0.0.0.0
+mysqlx-bind-address = 127.0.0.1
+skip-name-resolve
+default-time-zone = "+00:00"
