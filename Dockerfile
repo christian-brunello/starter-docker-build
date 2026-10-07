@@ -154,11 +154,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /var/run/mysqld \
     && chown mysql:mysql /var/run/mysqld
 
-# System user matching the production unit (User=starter in starter-core.service)
+# System user matching the production unit (User=starter in starter-core.service).
+# netdev: fuller Avahi D-Bus rights on typical Ubuntu host policies.
 RUN groupadd --system --gid 999 starter \
+    && groupadd --system netdev 2>/dev/null || true \
     && useradd --system --uid 999 --gid starter \
         --home-dir /home/starter --create-home \
         --shell /usr/sbin/nologin starter \
+    && usermod -aG netdev starter \
     && install -d -o starter -g starter -m 755 /home/starter
 
 COPY --from=builder /usr/local /usr/local

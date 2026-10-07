@@ -20,9 +20,18 @@ ensure_volume() {
 
 extra_args=()
 
-# Host networking + host Avahi via system D-Bus
+# Host networking + host Avahi via system D-Bus.
+# Docker's default AppArmor profile blocks D-Bus Hello → Avahi "Access denied".
+# Override unless STARTER_APPARMOR is set (e.g. STARTER_APPARMOR=docker-default).
+APPARMOR_PROFILE="${STARTER_APPARMOR:-unconfined}"
+extra_args+=(--security-opt "apparmor=${APPARMOR_PROFILE}")
+
 if [[ -S /var/run/dbus/system_bus_socket ]]; then
     extra_args+=(-v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket)
+fi
+# Help D-Bus/Avahi match the host identity when using the host bus
+if [[ -f /etc/machine-id ]]; then
+    extra_args+=(-v /etc/machine-id:/etc/machine-id:ro)
 fi
 
 # --- persistent mutable data (survive image rebuild) ---
@@ -57,7 +66,7 @@ else
 fi
 
 MYSQL_PORT="${STARTER_MYSQL_PORT:-3306}"
-echo "Running ${IMAGE_TAG} as ${NAME} (--network=host)"
+echo "Running ${IMAGE_TAG} as ${NAME} (--network=host, apparmor=${APPARMOR_PROFILE})"
 echo "  MySQL listens on 0.0.0.0:${MYSQL_PORT}"
 echo "  Tip: stop host mysqld if it owns that port, or set STARTER_MYSQL_PORT."
 echo "  Rebuilds keep volumes; overlay only seeds *missing* files on first use."

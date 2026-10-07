@@ -97,6 +97,9 @@ STARTER_MYSQL_PORT=3307 ./run.sh
 
 - `--network=host` — mDNS/Avahi, LAN access, ports on the host IP
 - host system D-Bus socket (use the host Avahi daemon)
+- `--security-opt apparmor=unconfined` — required so the container may talk to
+  the host D-Bus/Avahi (Docker’s default AppArmor profile otherwise yields
+  `error creating avahi client: Access denied`)
 - three Docker volumes for mutable data (see below)
 
 ---
@@ -191,9 +194,13 @@ runuser -u starter -- starter-configurable-adapter \
 
 | Need | How |
 |------|-----|
-| mDNS discovery | `--network=host` + host D-Bus (Avahi) |
+| mDNS discovery | `--network=host` + host D-Bus (Avahi) + `apparmor=unconfined` |
 | Reach LAN devices | same network as the host |
 | Be reachable (MySQL, HTTP) | ports bound on the host IP |
+
+If you see `error creating avahi client: Access denied`, the container was
+started without the AppArmor override. Use `./run.sh` (or pass
+`--security-opt apparmor=unconfined`).
 
 **Port 3306 warning:** if the host already runs MySQL, use
 `STARTER_MYSQL_PORT=3307` or stop the host mysqld.
@@ -219,6 +226,7 @@ Host configs often use `127.0.0.1`.
 | `STARTER_VOLUME_PREFIX` | volume name prefix |
 | `STARTER_ETC` / `STARTER_MYSQL_DATA` / `STARTER_HOME` | bind mounts instead of named volumes |
 | `STARTER_CONTAINER_NAME` | container name (default `starter`) |
+| `STARTER_APPARMOR` | AppArmor profile (default `unconfined`; needed for Avahi) |
 
 ---
 
