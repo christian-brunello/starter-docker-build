@@ -134,6 +134,18 @@ Prefer copying from `docker-build-sitedir/host/` on house machines.
 | Explain compose fails | `EXPLAIN_DATA_ROOT` exported / in `/etc/default/explain-stack` |
 | Grafana cannot see MySQL | attach to `mysql-server_default` / `rack-net` (done by `run-grafana.sh`) |
 | Parameters API from Grafana | STARTER listen `0.0.0.0:18765`; use `host.docker.internal` |
+| Core `peers: 0` / rules idle (e.g. outdoor lights stuck off) | Avahi publishing on Docker bridges only — see below |
+
+### Avahi + Docker bridges
+
+If `starter-debugger` shows `peers: 0` / `inputs: 0` and logs contain
+`Could not connect to fe80::…: Invalid argument`, restrict Avahi to the LAN NIC:
+
+1. Set `allow-interfaces=<nic>` under `[server]` in `/etc/avahi/avahi-daemon.conf`
+   (example: [`systemd/avahi-daemon.conf.example`](../systemd/avahi-daemon.conf.example);
+   house value in `docker-build-sitedir/host/avahi-daemon.conf`).
+2. `sudo systemctl restart avahi-daemon.service starter-docker.service`
+3. Confirm `avahi-browse -art` lists `ST:*` on that NIC (IPv4) and debugger shows peers > 0.
 
 ## Related
 

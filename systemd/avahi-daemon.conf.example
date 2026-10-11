@@ -1,0 +1,16 @@
+# Fragment for /etc/avahi/avahi-daemon.conf ([server] section).
+#
+# With Docker bridge networks, Avahi often publishes STARTER mDNS (_dbus._tcp)
+# only on br-*/veth*/docker0. starter-core then tries fe80:: link-local addresses
+# and fails ("Invalid argument") → peers=0, rules never drive outputs (lights, etc.).
+#
+# Restrict publishing/browsing to the host LAN NIC (replace with your interface):
+#
+#   allow-interfaces=eth0
+#
+# Then: sudo systemctl restart avahi-daemon.service starter-docker.service
+#
+# Site-specific value for this house lives in
+# docker-build-sitedir/host/avahi-daemon.conf
+
+#allow-interfaces=eth0
