@@ -1,0 +1,21 @@
+[Unit]
+Description=STARTER explain stack (Ollama, Piper TTS, RAG)
+Documentation=file:///usr/local/share/doc/starter-docker/explain-README.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/default/explain-stack
+ExecStartPre=/bin/bash -c 'test -n "${EXPLAIN_DIR:-}" && test -f "${EXPLAIN_DIR}/docker-compose.yml"'
+ExecStartPre=/bin/bash -c 'test -n "${EXPLAIN_DATA_ROOT:-}" && test -d "${EXPLAIN_DATA_ROOT}"'
+ExecStartPre=/usr/bin/docker volume create ollama_data
+ExecStart=/bin/bash -c 'export EXPLAIN_DATA_ROOT; exec /usr/bin/docker compose -p explain -f "${EXPLAIN_DIR}/docker-compose.yml" up -d --build'
+ExecStop=/bin/bash -c 'exec /usr/bin/docker compose -p explain -f "${EXPLAIN_DIR}/docker-compose.yml" stop'
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

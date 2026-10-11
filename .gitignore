@@ -1,3 +1,6 @@
-# Site-specific STARTER configs (use scripts/sync-config-overlay.sh)
+# Site-specific STARTER configs (use scripts/apply-site.sh / sync-config-overlay.sh)
 overlay/etc/starter/**
 !overlay/etc/starter/.gitkeep
+
+# Synced from docker-build-sitedir by apply-site.sh / explain deploy
+explain/rag_docs/

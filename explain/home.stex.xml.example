@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal starter-explain config for the public image defaults.
+  Site-specific configs live in docker-build-sitedir/explain/home.stex.xml
+  and are applied via scripts/apply-site.sh before build.
+-->
+<stex version="1">
+  <core host="127.0.0.1" port="17373"/>
+
+  <llm url="http://127.0.0.1:5001/explain"
+       model="qwen2.5:3b"
+       timeout-ms="30000"
+       max-queue="4"
+       num-predict="32"
+       keep-alive="300">
+    <system>
+You are a concise home voice assistant. One short sentence. Use only EVENT, RULE, CONTEXT, and STATE.
+    </system>
+    <prompt>
+      <user-template>
+TYPE: {{type}}
+EVENT: {{event}}
+RULE: {{rule}}
+CONTEXT: {{context}}
+STATE:
+{{state}}
+      </user-template>
+    </prompt>
+  </llm>
+
+  <tts method="wyoming"
+       url="tcp://127.0.0.1:5005"
+       timeout-ms="30000"
+       max-queue="4"
+       response="audio/wav"/>
+  <audio player="paplay {{file}}"/>
+
+  <ignore>
+    <io pattern="^TIME:"/>
+  </ignore>
+
+  <contexts>
+  </contexts>
+</stex>

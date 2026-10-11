@@ -1,7 +1,7 @@
 # STARTER multi-component image: clone pinned GitHub commits and build with
 # each project's existing autotools stack. Ubuntu 22.04 LTS.
-# Runtime includes MySQL with STARTER skeleton, system user "starter",
-# and org.starter.core gsettings wired to generated DB credentials.
+# Runtime uses external mysql-server (TCP); system user "starter";
+# org.starter.core gsettings wired to generated DB credentials.
 #
 # Build: ./build.sh
 
@@ -54,6 +54,8 @@ ARG STARTER_ARISTON_PLUGIN_REPO=https://github.com/christian-brunello/starter-co
 ARG STARTER_ARISTON_PLUGIN_COMMIT
 ARG STARTER_PARAMETERS_PLUGIN_REPO=https://github.com/christian-brunello/starter-configurable-adapter-parameters-plugin.git
 ARG STARTER_PARAMETERS_PLUGIN_COMMIT
+ARG STARTER_EXPLAIN_REPO=https://github.com/christian-brunello/starter-explain.git
+ARG STARTER_EXPLAIN_COMMIT
 
 # --- starter-core (with remote debug server for starter-debugger) ---
 RUN git clone --filter=blob:none "${STARTER_CORE_REPO}" starter-core \
@@ -118,6 +120,16 @@ RUN git clone --filter=blob:none "${STARTER_PARAMETERS_PLUGIN_REPO}" stca-plugin
     && make install \
     && ldconfig
 
+# --- starter-explain (LLM/TTS voice daemon; RAG/Ollama/Piper are external) ---
+RUN git clone --filter=blob:none "${STARTER_EXPLAIN_REPO}" starter-explain \
+    && cd starter-explain \
+    && git checkout "${STARTER_EXPLAIN_COMMIT}" \
+    && ./autogen.sh \
+    && ./configure --prefix="${PREFIX}" \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
 # ---------------------------------------------------------------------------
 # runtime
 # ---------------------------------------------------------------------------
@@ -147,21 +159,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libjson-glib-1.0-0 \
         libsoup-3.0-0 \
         libsqlite3-0 \
-        mysql-server \
         mysql-client \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -f /var/lib/mysql/auto.cnf \
-    && mkdir -p /var/run/mysqld \
-    && chown mysql:mysql /var/run/mysqld
+        supervisor \
+        pulseaudio-utils \
+        tzdata \
+    && ln -snf /usr/share/zoneinfo/Europe/Rome /etc/localtime \
+    && echo Europe/Rome > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 # System user matching the production unit (User=starter in starter-core.service).
 # netdev: fuller Avahi D-Bus rights on typical Ubuntu host policies.
+# audio: paplay / PulseAudio for starter-explain
 RUN groupadd --system --gid 999 starter \
     && groupadd --system netdev 2>/dev/null || true \
+    && groupadd --system audio 2>/dev/null || true \
     && useradd --system --uid 999 --gid starter \
         --home-dir /home/starter --create-home \
         --shell /usr/sbin/nologin starter \
-    && usermod -aG netdev starter \
+    && usermod -aG netdev,audio starter \
     && install -d -o starter -g starter -m 755 /home/starter
 
 COPY --from=builder /usr/local /usr/local
@@ -170,20 +185,28 @@ COPY sql/skeleton.sql /usr/local/share/starter/sql/skeleton.sql
 COPY scripts/entrypoint.sh /usr/local/libexec/starter/entrypoint.sh
 COPY scripts/init-starter-db.sh /usr/local/libexec/starter/init-starter-db.sh
 COPY scripts/seed-volumes.sh /usr/local/libexec/starter/seed-volumes.sh
-COPY mysql/starter.cnf /etc/mysql/mysql.conf.d/starter.cnf
-# Overlay → image defaults only (seeded into the etc *volume* on first run)
+COPY scripts/container-main.sh /usr/local/libexec/starter/container-main.sh
+# Overlay → image defaults only (seeded into the etc *volume* on first run).
+# Site home.stex.xml is applied into overlay via scripts/apply-site.sh before build.
 COPY overlay/ /tmp/starter-overlay/
+COPY explain/home.stex.xml.example /tmp/home.stex.xml.example
 
 RUN echo /usr/local/lib > /etc/ld.so.conf.d/usr-local.conf \
     && ldconfig \
     && chmod 755 /usr/local/libexec/starter/entrypoint.sh \
                  /usr/local/libexec/starter/init-starter-db.sh \
                  /usr/local/libexec/starter/seed-volumes.sh \
+                 /usr/local/libexec/starter/container-main.sh \
     && install -d -m 755 /usr/local/etc/starter \
     && install -d -m 755 /usr/local/share/starter/defaults/etc/starter \
     && if [ -f /usr/local/etc/starter/rules.conf.example ]; then \
          install -m 644 /usr/local/etc/starter/rules.conf.example \
              /usr/local/share/starter/defaults/etc/starter/rules.conf.example; \
+       fi \
+    && if [ ! -f /tmp/starter-overlay/etc/starter/explain/home.stex.xml ]; then \
+         install -d /tmp/starter-overlay/etc/starter/explain; \
+         install -m 644 /tmp/home.stex.xml.example \
+             /tmp/starter-overlay/etc/starter/explain/home.stex.xml; \
        fi \
     && if [ -d /tmp/starter-overlay/etc/starter ]; then \
          find /tmp/starter-overlay/etc/starter -type f \
@@ -195,7 +218,7 @@ RUN echo /usr/local/lib > /etc/ld.so.conf.d/usr-local.conf \
              install -m 644 "${f}" "${dest}"; \
            done; \
        fi \
-    && rm -rf /tmp/starter-overlay \
+    && rm -rf /tmp/starter-overlay /tmp/home.stex.xml.example \
     && install -d /usr/share/glib-2.0/schemas \
     && if [ -f /usr/local/share/glib-2.0/schemas/org.starter.gschema.xml ]; then \
          install -m 644 /usr/local/share/glib-2.0/schemas/org.starter.gschema.xml \
@@ -205,16 +228,12 @@ RUN echo /usr/local/lib > /etc/ld.so.conf.d/usr-local.conf \
     && glib-compile-schemas /usr/share/glib-2.0/schemas \
     && chown -R starter:starter /usr/local/etc/starter
 
-# Optional password overrides at first container start (otherwise random).
-# STARTER_DB_WRITER_PASS / STARTER_DB_READER_PASS
-# STARTER_MYSQL_PORT — mysqld listen port (default 3306; use another if host mysqld conflicts)
+# External mysql-server (TCP). Root password required for first-time schema init.
+# STARTER_DB_WRITER_PASS / STARTER_DB_READER_PASS — optional overrides on first init.
 ENV STARTER_DB_HOST=127.0.0.1 \
     STARTER_DB_PORT=3306 \
     STARTER_DB_WRITER_USER=STWriter \
-    STARTER_DB_READER_USER=STReader \
-    STARTER_MYSQL_PORT=3306
-
-EXPOSE 3306
+    STARTER_DB_READER_USER=STReader
 
 ENTRYPOINT ["/usr/local/libexec/starter/entrypoint.sh"]
 WORKDIR /home/starter

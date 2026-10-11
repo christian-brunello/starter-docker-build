@@ -1,0 +1,35 @@
+# Environment for starter-docker.service (/etc/default/starter-docker)
+#
+# Copy to /etc/default/starter-docker and set secrets for this host.
+# Site-specific values may also live in docker-build-sitedir/host/.
+
+IMAGE_TAG=starter:local
+STARTER_CONTAINER_NAME=starter
+STARTER_VOLUME_PREFIX=starter
+
+# External mysql-server (compose project mysql-server)
+STARTER_DB_HOST=127.0.0.1
+STARTER_DB_PORT=3306
+STARTER_MYSQL_ROOT_PASSWORD=CHANGE_ME
+
+# AppArmor profile (unconfined required for host Avahi/D-Bus)
+STARTER_APPARMOR=unconfined
+
+# PulseAudio for starter-explain paplay (desktop uid)
+# STARTER_PULSE_UID=1000
+
+# Seconds to wait after DB init before starting programs
+# STARTER_BOOT_SETTLE_SECS=15
+
+# Path to the boot-services manifest inside the container
+# STARTER_BOOT_SERVICES=/usr/local/etc/starter/boot-services.conf
+
+# Optional: bind-mounts instead of named volumes
+# STARTER_ETC=/usr/local/etc/starter
+# STARTER_HOME=/var/lib/starter-home
+
+# Optional: starter-core -m match
+# STARTER_SERVICE_MATCH=
+
+# Optional: rules path inside the container
+# STARTER_RULES_FILE=/usr/local/etc/starter/rules.conf

@@ -1,0 +1,27 @@
+[Unit]
+Description=STARTER stack (Docker)
+Documentation=file:///usr/local/share/doc/starter-docker/starter-docker.md
+After=docker.service network-online.target avahi-daemon.service dbus.socket mysql-server.service
+Requires=docker.service
+Wants=network-online.target avahi-daemon.service mysql-server.service
+# Prefer the container over native host units (installer also disable --now st-*)
+Conflicts=starter-core.service
+
+[Service]
+Type=simple
+Environment=STARTER_CONTAINER_NAME=starter
+EnvironmentFile=-/etc/default/starter-docker
+# Give Docker and Avahi a moment after boot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/libexec/starter-docker/run.sh --service
+ExecStop=/usr/bin/docker stop -t 30 $STARTER_CONTAINER_NAME
+ExecStopPost=-/usr/bin/docker rm -f $STARTER_CONTAINER_NAME
+Restart=on-failure
+RestartSec=15s
+StartLimitIntervalSec=120
+StartLimitBurst=5
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

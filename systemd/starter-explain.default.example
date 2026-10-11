@@ -1,0 +1,4 @@
+# Environment for starter-explain.service (legacy host daemon).
+# Prefer the in-image daemon via boot-services.conf when possible.
+STEX_CONFIG=/path/to/docker-build-sitedir/explain/home.stex.xml
+# STEX_USER=youruser

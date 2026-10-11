@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Create STARTER schema, MySQL users, credentials file, and gsettings defaults.
-# Idempotent across image rebuilds when /var/lib/mysql and /usr/local/etc/starter
-# live on persistent volumes.
+# Talks to external mysql-server over TCP (no in-container mysqld).
 set -euo pipefail
 
-MARKER=/var/lib/mysql/.starter-initialized
+MARKER=/usr/local/etc/starter/.starter-db-initialized
 CRED_FILE=/usr/local/etc/starter/db-credentials
 SCHEMA_DIRS=(
     /usr/local/share/glib-2.0/schemas
@@ -12,19 +11,36 @@ SCHEMA_DIRS=(
 )
 SKELETON=/usr/local/share/starter/sql/skeleton.sql
 
+DB_HOST="${STARTER_DB_HOST:-127.0.0.1}"
+DB_PORT="${STARTER_DB_PORT:-3306}"
+ROOT_PASS="${STARTER_MYSQL_ROOT_PASSWORD:-}"
+
 mysql_root() {
-    mysql --protocol=socket -uroot "$@"
+    if [[ -n "${ROOT_PASS}" ]]; then
+        mysql -h"${DB_HOST}" -P"${DB_PORT}" -uroot -p"${ROOT_PASS}" --protocol=tcp "$@"
+    else
+        mysql -h"${DB_HOST}" -P"${DB_PORT}" -uroot --protocol=tcp "$@"
+    fi
 }
 
 wait_for_mysql() {
     local i
     for i in $(seq 1 90); do
-        if mysqladmin --protocol=socket -uroot ping --silent 2>/dev/null; then
-            return 0
+        if [[ -n "${ROOT_PASS}" ]]; then
+            if mysqladmin -h"${DB_HOST}" -P"${DB_PORT}" -uroot -p"${ROOT_PASS}" \
+                --protocol=tcp ping --silent 2>/dev/null; then
+                return 0
+            fi
+        else
+            if mysqladmin -h"${DB_HOST}" -P"${DB_PORT}" -uroot \
+                --protocol=tcp ping --silent 2>/dev/null; then
+                return 0
+            fi
         fi
         sleep 1
     done
-    echo "error: mysqld did not become ready" >&2
+    echo "error: MySQL at ${DB_HOST}:${DB_PORT} did not become ready" >&2
+    echo "       Ensure mysql-server is up and STARTER_MYSQL_ROOT_PASSWORD is set." >&2
     return 1
 }
 
@@ -94,7 +110,6 @@ set_starter_gsettings() {
     gset rules-preprocessor 'm4 {F}'
 }
 
-# Re-apply settings from the persistent credentials file (survives image rebuild).
 restore_from_credentials() {
     # shellcheck disable=SC1090
     set -a
@@ -113,25 +128,41 @@ restore_from_credentials() {
         "${reader_user}" "${reader_pass}"
     apply_gsettings_override "${host}" "${port}" "${writer_user}" "${writer_pass}"
     set_starter_gsettings "${host}" "${port}" "${writer_user}" "${writer_pass}"
-    echo "Restored gsettings from ${CRED_FILE} (db-port=${port})"
+    echo "Restored gsettings from ${CRED_FILE} (db=${host}:${port})"
 }
 
 wait_for_mysql
 
-mysql_root < "${SKELETON}"
-
 if [ -f "${MARKER}" ]; then
-    echo "STARTER database already initialized (persistent volume)"
+    echo "STARTER database already initialized (marker ${MARKER})"
     if [ -f "${CRED_FILE}" ]; then
         restore_from_credentials
+        # Ensure skeleton tables exist (idempotent)
+        mysql_root < "${SKELETON}" || true
+        # Re-align MySQL users to persistent passwords (survives external DB rebuilds)
+        # shellcheck disable=SC1090
+        set -a
+        # shellcheck source=/dev/null
+        source "${CRED_FILE}"
+        set +a
+        mysql_root <<EOF || true
+CREATE USER IF NOT EXISTS '${DB_WRITER_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${DB_WRITER_PASS}';
+CREATE USER IF NOT EXISTS '${DB_READER_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${DB_READER_PASS}';
+ALTER USER '${DB_WRITER_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${DB_WRITER_PASS}';
+ALTER USER '${DB_READER_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${DB_READER_PASS}';
+GRANT SELECT, INSERT, UPDATE, DELETE ON STARTER.* TO '${DB_WRITER_USER}'@'%';
+GRANT SELECT ON STARTER.* TO '${DB_READER_USER}'@'%';
+FLUSH PRIVILEGES;
+EOF
     else
         echo "warning: ${CRED_FILE} missing on etc volume; gsettings not restored" >&2
     fi
     exit 0
 fi
 
-DB_HOST="${STARTER_DB_HOST:-127.0.0.1}"
-DB_PORT="${STARTER_DB_PORT:-3306}"
+# First init: apply skeleton, create users
+mysql_root < "${SKELETON}"
+
 WRITER_USER="${STARTER_DB_WRITER_USER:-STWriter}"
 READER_USER="${STARTER_DB_READER_USER:-STReader}"
 WRITER_PASS="${STARTER_DB_WRITER_PASS:-$(rand_pass)}"
@@ -152,5 +183,5 @@ apply_gsettings_override "${DB_HOST}" "${DB_PORT}" "${WRITER_USER}" "${WRITER_PA
 set_starter_gsettings "${DB_HOST}" "${DB_PORT}" "${WRITER_USER}" "${WRITER_PASS}"
 
 touch "${MARKER}"
-echo "STARTER database initialized (writer=${WRITER_USER}, reader=${READER_USER})"
+echo "STARTER database initialized on ${DB_HOST}:${DB_PORT} (writer=${WRITER_USER})"
 echo "Credentials: ${CRED_FILE}"

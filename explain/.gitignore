@@ -1,0 +1,8 @@
+# Piper voice models (download or mount from USB; do not commit)
+voices/*.onnx
+voices/*.onnx.json
+!voices/.gitkeep
+
+# Chroma DB is rebuilt with POST /index or ./reindex.sh
+chroma_db/
+**/chroma.sqlite3

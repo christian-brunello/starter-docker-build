@@ -1,0 +1,5 @@
+# Environment for explain-stack.service (/etc/default/explain-stack)
+# Absolute path to the docker-build/explain directory on this host.
+EXPLAIN_DIR=/path/to/docker-build/explain
+# Data disk root for voices / rag_docs / chroma (used by deploy.sh / compose)
+# EXPLAIN_DATA_ROOT=/mnt/data/starter/explain

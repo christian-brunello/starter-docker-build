@@ -1,0 +1,6 @@
+# Environment for mysql-server.service (/etc/default/mysql-server)
+MYSQL_SERVER_DIR=/path/to/docker-build/mysql-server
+MYSQL_DATA_DIR=/mnt/data/mysql-server-data
+MYSQL_ROOT_PASSWORD=CHANGE_ME
+# Optional: set on first datadir init for compute_rack user
+# MYSQL_RACK_PASSWORD=CHANGE_ME

@@ -1,0 +1,49 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: always
+    network_mode: "host"
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_NUM_THREAD=8
+    volumes:
+      - ollama_data:/root/.ollama
+
+  piper-tts:
+    image: rhasspy/wyoming-piper:latest
+    container_name: piper_tts
+    restart: always
+    network_mode: "host"
+    # Voices are local on the data disk; image healthcheck often fails without DNS
+    # (voice catalog fetch) even when Wyoming is ready on :5005.
+    healthcheck:
+      disable: true
+    command:
+      - --voice
+      - it_IT-serena-high
+      - --uri
+      - tcp://0.0.0.0:5005
+      - --data-dir
+      - /data
+      - --download-dir
+      - /data
+    volumes:
+      - ${EXPLAIN_DATA_ROOT:?set EXPLAIN_DATA_ROOT}/tts/voices:/data
+
+
+  explain-service:
+    build: .
+    container_name: explain_service
+    restart: always
+    network_mode: "host"
+    volumes:
+      - ${EXPLAIN_DATA_ROOT}/llm/rag_docs:/app/docs
+      - ${EXPLAIN_DATA_ROOT}/llm/chroma_db:/app/chroma_db
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
+    external: true
