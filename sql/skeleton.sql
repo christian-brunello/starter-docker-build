@@ -75,3 +75,19 @@ CREATE TABLE IF NOT EXISTS stats (
     threads_last      REAL NOT NULL,
     INDEX idx_service_name (service_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Latest health probe results (written by host system-healthcheck.sh).
+CREATE TABLE IF NOT EXISTS health_checks (
+    id            INT NOT NULL AUTO_INCREMENT,
+    check_id      VARCHAR(64) NOT NULL,
+    category      VARCHAR(64) NOT NULL,
+    display_name  VARCHAR(128) NOT NULL,
+    ok            TINYINT(1) NOT NULL,
+    message       TEXT,
+    checked_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    sort_order    INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_health_check_id (check_id),
+    INDEX idx_health_category (category),
+    INDEX idx_health_sort (sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

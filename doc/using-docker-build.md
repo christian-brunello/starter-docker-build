@@ -70,24 +70,34 @@ export MYSQL_DATA_DIR=/mnt/data/mysql-server-data
 sudo ./mysql-server/install-systemd.sh   # copies sitedir host/ or *.example
 ```
 
-### 2. Apply site + build STARTER
+### 2. Apply site + build + deploy STARTER
+
+One-shot (preferred on the house host):
+
+```bash
+./scripts/deploy-starter.sh
+# or after an existing image: ./scripts/deploy-starter.sh --skip-build
+```
+
+This runs `apply-site`, `./build.sh`, `install-systemd.sh` (refreshes
+`system-healthcheck.sh` / `run.sh` / units), restarts `starter-docker`, waits
+for supervisord, and runs one healthcheck.
+
+Manual equivalent:
 
 ```bash
 ./scripts/apply-site.sh
 ./scripts/sync-boot-services.sh   # optional: from host units
 ./build.sh                        # tag starter:local
+sudo ./scripts/install-systemd.sh
+# edit /etc/default/starter-docker on first install if needed
+sudo systemctl restart starter-docker.service
 ```
 
-### 3. Run STARTER
+Interactive (no systemd):
 
 ```bash
-# interactive
 STARTER_MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" ./run.sh
-
-# or detached / systemd
-sudo ./scripts/install-systemd.sh
-# edit /etc/default/starter-docker (from systemd/*.default.example or sitedir/host/)
-sudo systemctl restart starter-docker.service
 ```
 
 Volumes: `starter-etc` → `/usr/local/etc/starter`, `starter-home` → `/home/starter`.
@@ -139,13 +149,19 @@ Prefer copying from `docker-build-sitedir/host/` on house machines.
 ### Avahi + Docker bridges
 
 If `starter-debugger` shows `peers: 0` / `inputs: 0` and logs contain
-`Could not connect to fe80::…: Invalid argument`, restrict Avahi to the LAN NIC:
+`Could not connect to fe80::…: Invalid argument`, pin Avahi to the LAN NIC
+and **IPv4 only** (IPv6 link-local breaks starter-core connects):
 
-1. Set `allow-interfaces=<nic>` under `[server]` in `/etc/avahi/avahi-daemon.conf`
-   (example: [`systemd/avahi-daemon.conf.example`](../systemd/avahi-daemon.conf.example);
-   house value in `docker-build-sitedir/host/avahi-daemon.conf`).
-2. `sudo systemctl restart avahi-daemon.service starter-docker.service`
-3. Confirm `avahi-browse -art` lists `ST:*` on that NIC (IPv4) and debugger shows peers > 0.
+1. `sudo ./scripts/apply-avahi-host.sh`  
+   (uses `docker-build-sitedir/host/avahi-daemon.conf` when present, else
+   [`systemd/avahi-daemon.conf.example`](../systemd/avahi-daemon.conf.example):
+   `use-ipv6=no`, `allow-interfaces=<nic>`, `check-response-ttl=yes`, reflector off).
+2. `sudo systemctl restart starter-docker.service`
+3. Confirm `avahi-browse -art` lists `ST:*` on that NIC **IPv4 only**, and
+   debugger shows peers > 0.
+
+Malformed / non-compliant mDNS (some Shelly EM packets) is discarded by
+avahi-daemon; the fragment keeps the reflector disabled so junk is not amplified.
 
 ## Related
 

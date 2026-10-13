@@ -48,6 +48,34 @@ Read password from the running starter container:
 docker exec starter sed -n 's/^DB_READER_PASS=//p' /usr/local/etc/starter/db-credentials
 ```
 
+## Homepage: System status
+
+When site provisioning includes
+`dashboards/json/house/system-status.json`, `run-grafana.sh` sets
+`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` so Grafana opens that dashboard
+first. It has three stacked rows (tables only, no history graphs):
+
+1. **System status** — `health_checks` (OK/FAIL from host `system-healthcheck.sh`)
+2. **Process metrics** — `stats` (same query as the older System dashboard)
+3. **Labels** — each label plus its latest `history` row
+
+Health data is written by the host timer `starter-healthcheck.timer`
+(installed via `scripts/install-systemd.sh`). After schema/deploy changes:
+
+```bash
+# create health_checks table (skeleton re-applied on starter start)
+systemctl restart starter-docker
+# install/refresh timer + script
+sudo ./scripts/install-systemd.sh
+# one-shot probe
+sudo /usr/local/libexec/starter-docker/system-healthcheck.sh
+# remount provisioning + homepage env
+./grafana/deploy.sh
+```
+
+If an old org preference in `/mnt/grafana` still points elsewhere, reset the
+default home once in the Grafana UI (Preferences → Home dashboard).
+
 ## Example queries
 
 Schema sketch (see `sql/skeleton.sql`):
@@ -55,6 +83,7 @@ Schema sketch (see `sql/skeleton.sql`):
 - `labels` — I/O metadata (`name`, `type`, `unit`, …)
 - `history` — time series (`timestamp`, `label_id`, `value`, `source`)
 - `stats` — per-service process stats
+- `health_checks` — latest host health probes (`ok`, `message`, `checked_at`)
 
 **List labels**
 

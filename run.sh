@@ -47,29 +47,40 @@ if [[ -f /etc/machine-id ]]; then
 fi
 
 # PulseAudio for starter-explain (paplay) — desktop user session.
-# Mount the socket at /run/pulse-native (not under /run/user/<uid>): that dir is
-# mode 700, so container user "starter" cannot traverse it. Auth needs the cookie.
+# Mount the whole runtime dir (not only the socket file): when Pulse recreates
+# `native`, the container sees the new inode without a starter restart.
+# Host dir is often mode 700 → ensure-pulse-access.sh keeps it 755.
+# Cookie is staged under /run/starter-pulse/ (directory mount) so Pulse restarts
+# can refresh the cookie in-place without stale Docker file-bind inodes.
 PULSE_UID="${STARTER_PULSE_UID:-1000}"
 PULSE_RUNTIME="${STARTER_PULSE_RUNTIME:-/run/user/${PULSE_UID}/pulse}"
 PULSE_SOCKET="${PULSE_RUNTIME}/native"
-PULSE_HOME="$(getent passwd "${PULSE_UID}" 2>/dev/null | cut -d: -f6 || true)"
-PULSE_COOKIE_HOST="${STARTER_PULSE_COOKIE:-${PULSE_HOME:+${PULSE_HOME}/.config/pulse/cookie}}"
-if [[ -S "${PULSE_SOCKET}" ]]; then
-    extra_args+=(-v "${PULSE_SOCKET}:/run/pulse-native")
-    extra_args+=(-e "PULSE_SERVER=unix:/run/pulse-native")
-    if [[ -n "${PULSE_COOKIE_HOST}" && -f "${PULSE_COOKIE_HOST}" ]]; then
-        # Stage a world-readable copy: container uid starter ≠ desktop uid
-        PULSE_COOKIE_STAGE="${STARTER_PULSE_COOKIE_STAGE:-/run/starter-pulse-cookie}"
-        cp -f "${PULSE_COOKIE_HOST}" "${PULSE_COOKIE_STAGE}"
-        chmod 644 "${PULSE_COOKIE_STAGE}"
-        extra_args+=(-v "${PULSE_COOKIE_STAGE}:/run/pulse-cookie:ro")
-        extra_args+=(-e "PULSE_COOKIE=/run/pulse-cookie")
-        echo "PulseAudio: ${PULSE_SOCKET} (cookie ${PULSE_COOKIE_HOST})"
+PULSE_STAGE_DIR="${STARTER_PULSE_STAGE_DIR:-/run/starter-pulse}"
+ENSURE_PULSE="${ROOT}/scripts/ensure-pulse-access.sh"
+if [[ ! -x "${ENSURE_PULSE}" ]]; then
+    ENSURE_PULSE=/usr/local/libexec/starter-docker/ensure-pulse-access.sh
+fi
+if [[ -x "${ENSURE_PULSE}" ]]; then
+    STARTER_PULSE_UID="${PULSE_UID}" STARTER_PULSE_STAGE_DIR="${PULSE_STAGE_DIR}" \
+        "${ENSURE_PULSE}" || true
+elif [[ -d "${PULSE_RUNTIME}" ]]; then
+    chmod 755 "${PULSE_RUNTIME}" 2>/dev/null || true
+fi
+if [[ -d "${PULSE_RUNTIME}" ]]; then
+    extra_args+=(-v "${PULSE_RUNTIME}:/run/pulse")
+    extra_args+=(-e "PULSE_SERVER=unix:/run/pulse/native")
+    if [[ -f "${PULSE_STAGE_DIR}/cookie" ]]; then
+        extra_args+=(-v "${PULSE_STAGE_DIR}:/run/pulse-auth:ro")
+        extra_args+=(-e "PULSE_COOKIE=/run/pulse-auth/cookie")
+        echo "PulseAudio: ${PULSE_RUNTIME} → /run/pulse (cookie dir ${PULSE_STAGE_DIR})"
     else
-        echo "PulseAudio: ${PULSE_SOCKET} (no cookie — paplay may get Access denied)"
+        echo "PulseAudio: ${PULSE_RUNTIME} → /run/pulse (no cookie — paplay may get Access denied)"
+    fi
+    if [[ ! -S "${PULSE_SOCKET}" ]]; then
+        echo "PulseAudio: warning — ${PULSE_SOCKET} missing now (will appear after Pulse starts)"
     fi
 else
-    echo "PulseAudio: ${PULSE_SOCKET} not present (explain TTS play may fail)"
+    echo "PulseAudio: ${PULSE_RUNTIME} not present (explain TTS play may fail)"
 fi
 
 if [[ -n "${STARTER_ETC:-}" ]]; then

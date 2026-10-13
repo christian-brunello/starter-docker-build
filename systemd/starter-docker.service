@@ -13,6 +13,8 @@ Environment=STARTER_CONTAINER_NAME=starter
 EnvironmentFile=-/etc/default/starter-docker
 # Give Docker and Avahi a moment after boot
 ExecStartPre=/bin/sleep 5
+# Pulse runtime must be traversable + cookie staged before container starts
+ExecStartPre=-/usr/local/libexec/starter-docker/ensure-pulse-access.sh
 ExecStart=/usr/local/libexec/starter-docker/run.sh --service
 ExecStop=/usr/bin/docker stop -t 30 $STARTER_CONTAINER_NAME
 ExecStopPost=-/usr/bin/docker rm -f $STARTER_CONTAINER_NAME

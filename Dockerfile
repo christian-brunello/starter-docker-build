@@ -48,6 +48,8 @@ ARG STARTER_DEBUGGER_REPO=https://github.com/christian-brunello/starter-debugger
 ARG STARTER_DEBUGGER_COMMIT
 ARG STARTER_CONFIGURABLE_SERVICE_REPO=https://github.com/christian-brunello/starter-configurable-service.git
 ARG STARTER_CONFIGURABLE_SERVICE_COMMIT
+ARG STARTER_CONFIGURABLE_SERVICE_EXTRAS_REPO=https://github.com/christian-brunello/starter-configurable-service-extras.git
+ARG STARTER_CONFIGURABLE_SERVICE_EXTRAS_COMMIT
 ARG STARTER_CONFIGURABLE_ADAPTER_REPO=https://github.com/christian-brunello/starter-configurable-adapter.git
 ARG STARTER_CONFIGURABLE_ADAPTER_COMMIT
 ARG STARTER_ARISTON_PLUGIN_REPO=https://github.com/christian-brunello/starter-configurable-adapter-ariston-plugin.git
@@ -85,6 +87,16 @@ RUN git clone --filter=blob:none "${STARTER_DEBUGGER_REPO}" starter-debugger \
 RUN git clone --filter=blob:none "${STARTER_CONFIGURABLE_SERVICE_REPO}" starter-configurable-service \
     && cd starter-configurable-service \
     && git checkout "${STARTER_CONFIGURABLE_SERVICE_COMMIT}" \
+    && ./autogen.sh \
+    && ./configure --prefix="${PREFIX}" \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# --- STCS extras (process helpers: current-time, sun-position; future plugins) ---
+RUN git clone --filter=blob:none "${STARTER_CONFIGURABLE_SERVICE_EXTRAS_REPO}" starter-configurable-service-extras \
+    && cd starter-configurable-service-extras \
+    && git checkout "${STARTER_CONFIGURABLE_SERVICE_EXTRAS_COMMIT}" \
     && ./autogen.sh \
     && ./configure --prefix="${PREFIX}" \
     && make -j"$(nproc)" \

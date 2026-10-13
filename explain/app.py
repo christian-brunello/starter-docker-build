@@ -21,7 +21,7 @@ MAX_INDEX_BYTES = 20 * 1024
 
 # Curated house notes; skip long manuals / OCR dumps
 INDEX_ALLOW = re.compile(
-    r"^(site|objects|correlations|chaffolink|thinking|profile|electricity)\.txt$",
+    r"^(site|objects|correlations|chaffolink|thinking|profile|electricity|automation|pv-battery)\.txt$",
     re.I,
 )
 INDEX_DENY = re.compile(r"(?i)(manuale|pdf\d+|growatt).*")
@@ -99,17 +99,6 @@ def index_documents():
     return {"status": "success", "indexed_chunks": len(split_docs), "docs": len(docs)}
 
 
-def _is_action_prompt(text: str) -> bool:
-    if not text:
-        return False
-    t = text.lower()
-    if "type: action" in t:
-        return True
-    if re.search(r"(?m)^RULE:\s*(?!none\s*$)", text):
-        return True
-    return False
-
-
 @app.post("/explain")
 def explain_event(payload: ExplainPayload):
     try:
@@ -133,13 +122,18 @@ def explain_event(payload: ExplainPayload):
                 pass
 
         static_context = ""
-        # Gate RAG: never for events; only for action/RULE prompts, k=1
-        if _is_action_prompt(starter):
-            vectorstore = get_vectorstore()
-            if vectorstore:
-                docs = vectorstore.similarity_search(starter, k=1)
-                if docs:
-                    static_context = docs[0].page_content.strip()
+        # RAG for both event and action (k=1); search on TYPE/EVENT/RULE/CONTEXT lines
+        vectorstore = get_vectorstore()
+        if vectorstore:
+            search_bits = []
+            for line in starter.splitlines():
+                s = line.strip()
+                if s.upper().startswith(("EVENT:", "RULE:", "CONTEXT:", "TYPE:")):
+                    search_bits.append(s)
+            search_q = "\n".join(search_bits) if search_bits else starter
+            docs = vectorstore.similarity_search(search_q, k=1)
+            if docs:
+                static_context = docs[0].page_content.strip()
 
         if system:
             full_prompt = f"{system}\n\n{starter}\n"
@@ -155,9 +149,10 @@ def explain_event(payload: ExplainPayload):
         response_text = llm.invoke(full_prompt)
         if isinstance(response_text, str):
             response_text = response_text.strip().splitlines()[0].strip()
-            # drop accidental TYPE:/ACTION: prefixes
-            for pref in ("ACTION:", "EVENT:", "TYPE:"):
-                if response_text.upper().startswith(pref):
+            for pref in ("ACTION:", "EVENT:", "TYPE:", "[DOC]", "DOC:"):
+                u = response_text.upper()
+                pu = pref.upper()
+                if u.startswith(pu):
                     response_text = response_text[len(pref):].strip()
 
         return {

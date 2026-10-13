@@ -1,16 +1,26 @@
-# Fragment for /etc/avahi/avahi-daemon.conf ([server] section).
+# Example fragment for /etc/avahi/avahi-daemon.conf.
+# Apply with: sudo ./scripts/apply-avahi-host.sh
+# (reads STARTER_SITE_DIR/host/avahi-daemon.conf when present, else this file)
 #
 # With Docker bridge networks, Avahi often publishes STARTER mDNS (_dbus._tcp)
-# only on br-*/veth*/docker0. starter-core then tries fe80:: link-local addresses
-# and fails ("Invalid argument") → peers=0, rules never drive outputs (lights, etc.).
+# on br-*/veth*/docker0. starter-core then tries fe80:: and fails
+# ("Invalid argument") → peers=0. Prefer the LAN NIC + IPv4 only.
 #
-# Restrict publishing/browsing to the host LAN NIC (replace with your interface):
-#
-#   allow-interfaces=eth0
-#
-# Then: sudo systemctl restart avahi-daemon.service starter-docker.service
-#
-# Site-specific value for this house lives in
-# docker-build-sitedir/host/avahi-daemon.conf
+# Malformed / non-compliant mDNS (e.g. some Shelly EM packets) is discarded by
+# avahi-daemon; keep the reflector off so junk is not amplified.
 
+[server]
+use-ipv4=yes
+use-ipv6=no
 #allow-interfaces=eth0
+check-response-ttl=yes
+ratelimit-interval-usec=1000000
+ratelimit-burst=1000
+
+[publish]
+publish-aaaa-on-ipv4=no
+publish-a-on-ipv6=no
+
+[reflector]
+enable-reflector=no
+reflect-ipv=no

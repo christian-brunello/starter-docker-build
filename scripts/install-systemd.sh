@@ -26,11 +26,16 @@ fi
 
 install -d -m 755 "${LIBEXEC}" "${DOC_DST}"
 install -m 755 "${ROOT}/run.sh" "${LIBEXEC}/run.sh"
+install -m 755 "${ROOT}/scripts/ensure-pulse-access.sh" "${LIBEXEC}/ensure-pulse-access.sh"
+install -m 755 "${ROOT}/scripts/system-healthcheck.sh" "${LIBEXEC}/system-healthcheck.sh"
 install -m 644 "${ROOT}/systemd/starter-docker.service" "${UNIT_DST}"
+install -m 644 "${ROOT}/systemd/starter-healthcheck.service" /etc/systemd/system/starter-healthcheck.service
+install -m 644 "${ROOT}/systemd/starter-healthcheck.timer" /etc/systemd/system/starter-healthcheck.timer
 install -m 644 "${ROOT}/doc/starter-docker.md" "${DOC_DST}/starter-docker.md"
 
+SITE_DIR="${STARTER_SITE_DIR:-$(cd "${ROOT}/.." && pwd)/docker-build-sitedir}"
+
 if [[ ! -f "${ENV_DST}" ]]; then
-    SITE_DIR="${STARTER_SITE_DIR:-$(cd "${ROOT}/.." && pwd)/docker-build-sitedir}"
     SITE_ENV="${SITE_DIR}/host/starter-docker.default"
     EXAMPLE_ENV="${ROOT}/systemd/starter-docker.default.example"
     if [[ -f "${SITE_ENV}" ]]; then
@@ -87,17 +92,38 @@ for unit_path in /lib/systemd/system/st-*.service /etc/systemd/system/st-*.servi
 done
 shopt -u nullglob
 
+# Host Avahi: IPv4-only + LAN NIC (avoids fe80:: peer connect failures).
+if [[ -x "${ROOT}/scripts/apply-avahi-host.sh" ]]; then
+    echo "Applying host Avahi fragment…"
+    STARTER_SITE_DIR="${SITE_DIR:-${STARTER_SITE_DIR:-}}" "${ROOT}/scripts/apply-avahi-host.sh" || {
+        echo "warning: apply-avahi-host.sh failed — fix /etc/avahi/avahi-daemon.conf manually" >&2
+    }
+fi
+
+# PulseAudio: keep runtime dir traversable for container TTS after Pulse restarts.
+if [[ -x "${ROOT}/scripts/apply-pulse-host.sh" ]]; then
+    echo "Applying host Pulse access drop-in…"
+    "${ROOT}/scripts/apply-pulse-host.sh" || {
+        echo "warning: apply-pulse-host.sh failed — paplay may break after Pulse restart" >&2
+    }
+fi
+
 systemctl daemon-reload
 systemctl enable starter-docker.service
+systemctl enable --now starter-healthcheck.timer
 
 echo
 echo "Installed starter-docker.service (enabled at boot)."
 echo "  Config:  ${ENV_DST}"
 echo "  Unit:    ${UNIT_DST}"
 echo "  Runner:  ${LIBEXEC}/run.sh"
+echo "  Health:  starter-healthcheck.timer (every 1 min → ${LIBEXEC}/system-healthcheck.sh)"
 echo "  Stack:   MySQL + supervisord (core, adapters, services) inside the container"
 echo
 echo "Ensure the image exists first:  cd ${ROOT} && ./build.sh"
 echo "Refresh boot-services manifest (optional):  ./scripts/sync-boot-services.sh"
+echo "Avahi host fragment (optional):  ./scripts/apply-avahi-host.sh"
+echo "Pulse host access (optional):    ./scripts/apply-pulse-host.sh"
 echo "Then start:  systemctl start starter-docker.service"
 echo "Status:      systemctl status starter-docker.service"
+echo "Health:      systemctl status starter-healthcheck.timer"

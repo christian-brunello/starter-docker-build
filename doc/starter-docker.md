@@ -42,12 +42,15 @@ docker-build/
 │   ├── explain-stack.service
 │   ├── explain-stack.default.example
 │   ├── starter-explain.service
-│   └── starter-explain.default.example
+│   ├── starter-explain.default.example
+│   ├── starter-healthcheck.service
+│   └── starter-healthcheck.timer
 ├── scripts/
 │   ├── apply-site.sh            # rsync docker-build-sitedir → overlay / rag_docs
 │   ├── sync-config-overlay.sh   # copy /usr/local/etc/starter → overlay
 │   ├── sync-boot-services.sh    # enabled host units → boot-services.conf
-│   ├── install-systemd.sh       # install starter-docker; disable host st-*
+│   ├── install-systemd.sh       # install starter-docker + healthcheck timer
+│   ├── system-healthcheck.sh    # probe stack → STARTER.health_checks
 │   ├── entrypoint.sh            # seed volumes, wait MySQL, init DB
 │   ├── seed-volumes.sh          # copy defaults → etc volume (missing files only)
 │   ├── init-starter-db.sh       # STARTER schema, DB users, gsettings
@@ -64,6 +67,7 @@ docker-build/
 | starter-core (`--enable-debug-server`) | `/usr/local/bin/starter-core` |
 | starter-debugger | `/usr/local/bin/starter-debugger` |
 | configurable-service | `/usr/local/bin/starter-configurable-service` |
+| configurable-service-extras | `/usr/local/bin/current-time`, `sun-position` |
 | configurable-adapter | `/usr/local/bin/starter-configurable-adapter` |
 | ariston plugin | `…/configurable-adapter/plugins/ariston-remotethermo.so` |
 | parameters plugin | `…/configurable-adapter/plugins/parameters.so` |
@@ -186,6 +190,9 @@ sudo systemctl status starter-docker.service
 ```
 This enables `starter-docker.service` for `multi-user.target` (boot) and
 disables host `starter-core` / `st-*` so the full stack runs only in Docker.
+It also installs `starter-healthcheck.timer` (every 1 min), which runs
+`system-healthcheck.sh` and upserts rows into `STARTER.health_checks` for the
+Grafana **System status** homepage (see [`grafana-starter.md`](grafana-starter.md)).
 
 Useful commands:
 
@@ -193,6 +200,8 @@ Useful commands:
 sudo systemctl start|stop|restart starter-docker.service
 journalctl -u starter-docker.service -f
 docker logs -f starter
+sudo systemctl status starter-healthcheck.timer
+sudo /usr/local/libexec/starter-docker/system-healthcheck.sh
 ```
 
 `run.sh` modes:
@@ -261,7 +270,7 @@ Requires **`mysql-server`** up on `STARTER_DB_HOST:STARTER_DB_PORT` (default `12
 On first start (no `.starter-db-initialized` marker on etc volume):
 
 1. create the schema from [`sql/skeleton.sql`](../sql/skeleton.sql)
-   (database `STARTER`, tables `labels`, `history`, `stats`);
+   (database `STARTER`, tables `labels`, `history`, `stats`, `health_checks`);
 2. create MySQL users `STWriter` (R/W) and `STReader` (R), host `%`;
 3. write random passwords (or env-provided ones) to  
    `/usr/local/etc/starter/db-credentials` (on the etc volume);
@@ -355,7 +364,7 @@ Public tree: container runner only. MySQL / query examples:
 | `STARTER_DB_WRITER_PASS` / `STARTER_DB_READER_PASS` | passwords on first init |
 | `STARTER_VOLUME_PREFIX` | volume name prefix |
 | `STARTER_ETC` / `STARTER_HOME` | bind mounts instead of named volumes |
-| `STARTER_PULSE_UID` | desktop uid for PulseAudio mount (explain TTS) |
+| `STARTER_PULSE_UID` | desktop uid for PulseAudio (explain TTS); `run.sh` mounts `/run/user/<uid>/pulse` → `/run/pulse` and `/run/starter-pulse` → `/run/pulse-auth` (cookie). Host: `./scripts/apply-pulse-host.sh` installs chmod-only user drop-ins, `starter-pulse-access.path` (root cookie stage + mode 755), and `exit-idle-time = -1` in the desktop user’s `~/.config/pulse/daemon.conf` so Pulse does not exit after 20s idle. |
 | `STARTER_CONTAINER_NAME` | container name (default `starter`) |
 | `STARTER_APPARMOR` | AppArmor profile (default `unconfined`; needed for Avahi) |
 | `STARTER_BOOT_SERVICES` | path to boot-services manifest (default under etc volume) |

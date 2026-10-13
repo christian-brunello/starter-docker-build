@@ -1,0 +1,16 @@
+[Unit]
+Description=Watch Pulse runtime socket for starter container access
+Documentation=file:///usr/local/share/doc/starter-docker/starter-docker.md
+
+[Path]
+# Watch the socket inode only (not the directory). Watching PathModified on
+# the pulse dir re-triggers when ensure-pulse-access.sh runs chmod, which
+# hits systemd start-limit.
+PathExists=/run/user/1000/pulse/native
+PathChanged=/run/user/1000/pulse/native
+Unit=starter-pulse-access.service
+TriggerLimitIntervalSec=30s
+TriggerLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Ensure PulseAudio runtime is reachable from starter container
+Documentation=file:///usr/local/share/doc/starter-docker/starter-docker.md
+After=network-online.target
+# Path unit can retrigger on socket recreate; avoid cascading path failure.
+StartLimitIntervalSec=120
+StartLimitBurst=20
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/default/starter-docker
+ExecStart=/usr/local/libexec/starter-docker/ensure-pulse-access.sh
+
+[Install]
+WantedBy=multi-user.target

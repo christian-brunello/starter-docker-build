@@ -1,0 +1,13 @@
+[Unit]
+Description=STARTER system healthcheck (upsert STARTER.health_checks)
+Documentation=file:///usr/local/share/doc/starter-docker/starter-docker.md
+After=docker.service network-online.target starter-docker.service mysql-server.service
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/starter-docker
+ExecStart=/usr/local/libexec/starter-docker/system-healthcheck.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -63,6 +63,13 @@ if [[ -n "${PROVISIONING}" && -d "${PROVISIONING}" ]]; then
     -e "GF_PATHS_PROVISIONING=/etc/grafana/provisioning"
     -v "${PROVISIONING}:/etc/grafana/provisioning:ro"
   )
+  HOME_DASH="${PROVISIONING}/dashboards/json/house/system-status.json"
+  if [[ -f "${HOME_DASH}" ]]; then
+    echo "  home dashboard: system-status.json"
+    run_args+=(
+      -e "GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/json/house/system-status.json"
+    )
+  fi
   # Optional MySQL passwords for site mysql.yaml env substitution
   if [[ -z "${GRAFANA_STREADER_PASSWORD:-}" ]]; then
     if docker exec starter test -f /usr/local/etc/starter/db-credentials 2>/dev/null; then
