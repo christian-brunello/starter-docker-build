@@ -20,7 +20,7 @@ docs_fingerprint() {
     return
   fi
   # path + mtime + size — stable across runs if files unchanged
-  find "${DOCS_HOST}" -type f \( -iname '*.pdf' -o -iname '*.txt' \) -printf '%P\t%T@\t%s\n' 2>/dev/null \
+  find "${DOCS_HOST}" -type f \( -iname '*.pdf' -o -iname '*.txt' -o -iname '*.md' \) -printf '%P\t%T@\t%s\n' 2>/dev/null \
     | sort \
     | sha256sum \
     | awk '{print $1}'
@@ -37,11 +37,11 @@ if [[ ! -d "${STATE_DIR}" ]] || [[ ! -w "${STATE_DIR}" ]]; then
   exit 1
 fi
 
-count=$(find "${DOCS_HOST}" -type f \( -iname '*.pdf' -o -iname '*.txt' \) 2>/dev/null | wc -l | tr -d ' ')
+count=$(find "${DOCS_HOST}" -type f \( -iname '*.pdf' -o -iname '*.txt' -o -iname '*.md' \) 2>/dev/null | wc -l | tr -d ' ')
 fp=$(docs_fingerprint)
 
 if [[ "${count}" -eq 0 ]]; then
-  log "No pdf/txt in ${DOCS_HOST} — skip"
+  log "No pdf/txt/md in ${DOCS_HOST} — skip"
   exit 0
 fi
 

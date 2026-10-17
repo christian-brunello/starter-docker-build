@@ -47,6 +47,15 @@ run_args=(
   --add-host=host.docker.internal:host-gateway
   -p 3000:3000
   -e "TZ=${TZ_VAL}"
+  # Kiosk / long-lived browser sessions: default 10m rotation causes 401
+  # "token needs to be rotated" when the client misses Set-Cookie (Firefox
+  # private window, flaky reverse-proxy). 12h is enough for the house display.
+  -e "GF_AUTH_TOKEN_ROTATION_INTERVAL_MINUTES=${GF_AUTH_TOKEN_ROTATION_INTERVAL_MINUTES:-720}"
+  -e "GF_AUTH_LOGIN_MAXIMUM_INACTIVE_LIFETIME_DURATION=${GF_AUTH_LOGIN_MAXIMUM_INACTIVE_LIFETIME_DURATION:-30d}"
+  -e "GF_AUTH_LOGIN_MAXIMUM_LIFETIME_DURATION=${GF_AUTH_LOGIN_MAXIMUM_LIFETIME_DURATION:-30d}"
+  # House wall display: allow unauthenticated Viewer (login form still works for admin).
+  -e "GF_AUTH_ANONYMOUS_ENABLED=${GF_AUTH_ANONYMOUS_ENABLED:-true}"
+  -e "GF_AUTH_ANONYMOUS_ORG_ROLE=${GF_AUTH_ANONYMOUS_ORG_ROLE:-Viewer}"
   -v "${DATA}:/var/lib/grafana"
 )
 
@@ -78,9 +87,24 @@ if [[ -n "${PROVISIONING}" && -d "${PROVISIONING}" ]]; then
   fi
   if [[ -n "${GRAFANA_STREADER_PASSWORD:-}" ]]; then
     run_args+=(-e "GRAFANA_STREADER_PASSWORD=${GRAFANA_STREADER_PASSWORD}")
+  else
+    echo "NOTE: GRAFANA_STREADER_PASSWORD unset — STARTER mysql datasource may fail" >&2
+  fi
+  # rack-user password: env, else MYSQL_RACK_PASSWORD from site/host defaults
+  if [[ -z "${GRAFANA_RACK_PASSWORD:-}" ]]; then
+    for envf in \
+      "${SITE_DIR}/host/mysql-server.default" \
+      "/etc/default/mysql-server"; do
+      if [[ -r "${envf}" ]]; then
+        GRAFANA_RACK_PASSWORD="$(sed -n 's/^MYSQL_RACK_PASSWORD=//p' "${envf}" | head -n1)"
+        [[ -n "${GRAFANA_RACK_PASSWORD:-}" ]] && break
+      fi
+    done
   fi
   if [[ -n "${GRAFANA_RACK_PASSWORD:-}" ]]; then
     run_args+=(-e "GRAFANA_RACK_PASSWORD=${GRAFANA_RACK_PASSWORD}")
+  else
+    echo "NOTE: GRAFANA_RACK_PASSWORD unset — compute_rack (mysql-1) datasource will fail" >&2
   fi
 else
   echo "  provisioning: (none — empty Grafana; see doc/grafana-starter.md)"

@@ -1,8 +1,9 @@
 import os
 import re
+import shutil
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -10,21 +11,26 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.llms import Ollama
 
+try:
+    from langchain_core.documents import Document
+except ImportError:  # langchain 0.1.x
+    from langchain.schema import Document
+
 app = FastAPI(title="Explain Service - Starter LLM Engine")
 
 DOCS_DIR = "/app/docs"
 CHROMA_DIR = "/app/chroma_db"
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen2.5:3b"
+# Style/instructions come from the client system prompt; keep this neutral.
 DEFAULT_USER_QUERY = "Answer with one Italian sentence only."
-MAX_INDEX_BYTES = 20 * 1024
+MAX_INDEX_BYTES = 100 * 1024
+RETRIEVE_K = 4
 
-# Curated house notes; skip long manuals / OCR dumps
-INDEX_ALLOW = re.compile(
-    r"^(site|objects|correlations|chaffolink|thinking|profile|electricity|automation|pv-battery)\.txt$",
-    re.I,
-)
+# Skip obvious dumps; otherwise index curated .txt/.md under the size cap.
 INDEX_DENY = re.compile(r"(?i)(manuale|pdf\d+|growatt).*")
+# Tokens useful for heading alignment (Service:datapoint, paths, ids) — not domain-specific.
+HEADING_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{1,80}(?::[A-Za-z0-9_.-]{1,80})?")
 
 embeddings = OllamaEmbeddings(base_url=OLLAMA_URL, model="nomic-embed-text")
 
@@ -39,7 +45,7 @@ def get_llm(model: Optional[str] = None, num_predict: int = 32, num_ctx: int = 2
     return Ollama(
         base_url=OLLAMA_URL,
         model=model or DEFAULT_MODEL,
-        temperature=0.2,
+        temperature=0.1,
         num_predict=num_predict,
         num_ctx=num_ctx,
     )
@@ -62,15 +68,112 @@ def _should_index_file(path: str) -> bool:
         return False
     if "manuals" in path.replace("\\", "/").split("/"):
         return False
+    lower = base.lower()
+    if not (lower.endswith(".txt") or lower.endswith(".md")):
+        return False
     try:
-        if os.path.getsize(path) > MAX_INDEX_BYTES and not INDEX_ALLOW.match(base):
-            return False
+        return os.path.getsize(path) <= MAX_INDEX_BYTES
     except OSError:
         return False
-    if INDEX_ALLOW.match(base):
-        return True
-    # small curated txt fallback
-    return base.lower().endswith(".txt") and os.path.getsize(path) <= MAX_INDEX_BYTES
+
+
+def _clear_chroma_dir() -> None:
+    """Empty persist dir without removing the mount point."""
+    if not os.path.isdir(CHROMA_DIR):
+        os.makedirs(CHROMA_DIR, exist_ok=True)
+        return
+    for name in os.listdir(CHROMA_DIR):
+        path = os.path.join(CHROMA_DIR, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            try:
+                os.unlink(path)
+            except IsADirectoryError:
+                shutil.rmtree(path)
+
+
+def _split_documents(docs: List[Document]) -> List[Document]:
+    """
+    Keep markdown ## sections intact when present (generic catalog/docs layout).
+    Fall back to recursive split for prose without headings.
+    """
+    out: List[Document] = []
+    prose: List[Document] = []
+    for d in docs:
+        text = d.page_content or ""
+        if re.search(r"(?m)^## ", text):
+            for part in re.split(r"(?m)(?=^## )", text):
+                chunk = part.strip()
+                if not chunk:
+                    continue
+                meta = dict(d.metadata or {})
+                if chunk.startswith("## "):
+                    meta["heading"] = chunk.splitlines()[0][3:].strip()
+                out.append(Document(page_content=chunk, metadata=meta))
+        else:
+            prose.append(d)
+    if prose:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            separators=["\n\n", "\n", " ", ""],
+        )
+        out.extend(splitter.split_documents(prose))
+    return out
+
+
+def _search_query(starter: str) -> str:
+    """Prefer structured prompt lines when present; else full prompt."""
+    bits = []
+    for line in starter.splitlines():
+        s = line.strip()
+        if s.upper().startswith(("EVENT:", "RULE:", "CONTEXT:", "TYPE:")):
+            bits.append(s)
+    return "\n".join(bits) if bits else starter
+
+
+def _prompt_tokens(starter: str) -> List[str]:
+    return [t for t in HEADING_TOKEN_RE.findall(starter) if len(t) >= 3]
+
+
+def _chunk_heading(text: str, metadata: Optional[dict]) -> str:
+    if metadata and metadata.get("heading"):
+        return str(metadata["heading"]).strip()
+    first = (text or "").splitlines()[0].strip() if text else ""
+    if first.startswith("## "):
+        return first[3:].strip()
+    return ""
+
+
+def _pick_doc(
+    hits: List[Tuple[Document, float]], starter: str
+) -> Tuple[str, Optional[float], str]:
+    """
+    Choose one chunk: prefer a ## heading that appears as a token in the prompt
+    (generic catalog alignment). Else take the best similarity hit.
+    Distance scales differ by Chroma metric — never use a fixed absolute cutoff.
+    """
+    if not hits:
+        return "", None, ""
+    tokens = {t.casefold() for t in _prompt_tokens(starter)}
+    for doc, dist in hits:
+        text = (doc.page_content or "").strip()
+        heading = _chunk_heading(text, doc.metadata)
+        if heading and heading.casefold() in tokens:
+            return text, dist, heading
+    # Also scan all hits for heading∩prompt even if not rank-1 by embedding
+    for doc, dist in hits:
+        text = (doc.page_content or "").strip()
+        heading = _chunk_heading(text, doc.metadata)
+        if not heading:
+            continue
+        # Partial: heading contained in prompt text (covers "EVENT: Foo:bar …")
+        if heading in starter or heading.casefold() in starter.casefold():
+            return text, dist, heading
+    best_doc, best_dist = hits[0]
+    text = (best_doc.page_content or "").strip()
+    return text, best_dist, _chunk_heading(text, best_doc.metadata)
 
 
 @app.post("/index")
@@ -78,18 +181,22 @@ def index_documents():
     if not os.path.exists(DOCS_DIR) or not os.listdir(DOCS_DIR):
         return {"status": "warning", "message": "Nessun documento statico trovato in rag_docs"}
 
-    loader_txt = DirectoryLoader(DOCS_DIR, glob="**/*.txt", loader_cls=TextLoader)
     docs = []
-    for d in loader_txt.load():
-        src = d.metadata.get("source") or ""
-        if _should_index_file(src):
-            docs.append(d)
+    for glob_pat in ("**/*.txt", "**/*.md"):
+        loader = DirectoryLoader(DOCS_DIR, glob=glob_pat, loader_cls=TextLoader)
+        for d in loader.load():
+            src = d.metadata.get("source") or ""
+            if _should_index_file(src):
+                docs.append(d)
 
     if not docs:
         return {"status": "warning", "message": "Nessun contenuto valido (filtro corpus)"}
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
-    split_docs = text_splitter.split_documents(docs)
+    split_docs = _split_documents(docs)
+    if not split_docs:
+        return {"status": "warning", "message": "Nessun chunk da indicizzare"}
+
+    _clear_chroma_dir()
     vectorstore = Chroma.from_documents(
         documents=split_docs,
         embedding=embeddings,
@@ -122,18 +229,35 @@ def explain_event(payload: ExplainPayload):
                 pass
 
         static_context = ""
-        # RAG for both event and action (k=1); search on TYPE/EVENT/RULE/CONTEXT lines
+        doc_distance = None
+        doc_heading = ""
         vectorstore = get_vectorstore()
         if vectorstore:
-            search_bits = []
-            for line in starter.splitlines():
-                s = line.strip()
-                if s.upper().startswith(("EVENT:", "RULE:", "CONTEXT:", "TYPE:")):
-                    search_bits.append(s)
-            search_q = "\n".join(search_bits) if search_bits else starter
-            docs = vectorstore.similarity_search(search_q, k=1)
-            if docs:
-                static_context = docs[0].page_content.strip()
+            search_q = _search_query(starter)
+            hits: List[Tuple[Document, float]] = []
+            # Prefer exact metadata heading when prompt contains catalog-like tokens
+            # (e.g. "## Name" sections). Generic: any Token:subtoken in the prompt.
+            for tok in _prompt_tokens(starter):
+                if ":" not in tok:
+                    continue
+                try:
+                    keyed = vectorstore.similarity_search_with_score(
+                        tok, k=1, filter={"heading": tok}
+                    )
+                except Exception:
+                    keyed = []
+                if keyed:
+                    hits = keyed
+                    break
+            if not hits:
+                try:
+                    hits = vectorstore.similarity_search_with_score(
+                        search_q, k=RETRIEVE_K
+                    )
+                except Exception:
+                    plain = vectorstore.similarity_search(search_q, k=RETRIEVE_K)
+                    hits = [(d, 0.0) for d in plain]
+            static_context, doc_distance, doc_heading = _pick_doc(hits, starter)
 
         if system:
             full_prompt = f"{system}\n\n{starter}\n"
@@ -159,6 +283,9 @@ def explain_event(payload: ExplainPayload):
             "status": "success",
             "explanation": response_text,
             "response": response_text,
+            "doc_heading": doc_heading or None,
+            "doc_distance": doc_distance,
+            "doc_used": bool(static_context),
         }
 
     except HTTPException:
