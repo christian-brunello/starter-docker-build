@@ -1,6 +1,8 @@
+import argparse
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List, Tuple
@@ -21,11 +23,14 @@ app = FastAPI(title="Explain Service - Starter LLM Engine")
 DOCS_DIR = "/app/docs"
 CHROMA_DIR = "/app/chroma_db"
 OLLAMA_URL = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "qwen2.5:3b"
+DEFAULT_MODEL = "qwen2.5:7b"
 # Style/instructions come from the client system prompt; keep this neutral.
 DEFAULT_USER_QUERY = "Answer with one Italian sentence only."
 MAX_INDEX_BYTES = 100 * 1024
 RETRIEVE_K = 4
+
+# Optional append log: --log-text PATH or EXPLAIN_LOG_TEXT (same idea as starter-explain).
+LOG_TEXT_PATH: Optional[str] = os.environ.get("EXPLAIN_LOG_TEXT") or None
 
 # Skip obvious dumps; otherwise index curated .txt/.md under the size cap.
 INDEX_DENY = re.compile(r"(?i)(manuale|pdf\d+|growatt).*")
@@ -176,6 +181,30 @@ def _pick_doc(
     return text, best_dist, _chunk_heading(text, best_doc.metadata)
 
 
+def _append_text_log(received: str, llm_prompt: str, response: str) -> None:
+    """Append one iteration: timestamp, received prompt, RAG-enriched LLM prompt, response."""
+    path = LOG_TEXT_PATH
+    if not path:
+        return
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        ts = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+        with open(path, "a", encoding="utf-8") as fp:
+            fp.write(f"{ts}\n")
+            fp.write("received:\n")
+            fp.write(f"{received if received else '(empty)'}\n")
+            fp.write("llm_prompt:\n")
+            fp.write(f"{llm_prompt if llm_prompt else '(empty)'}\n")
+            fp.write(f"response: {response if response else ''}\n")
+            fp.write("\n")
+            fp.flush()
+    except OSError as exc:
+        # Never fail the request because of logging.
+        print(f"WARNING: cannot append to --log-text {path}: {exc}", flush=True)
+
+
 @app.post("/index")
 def index_documents():
     if not os.path.exists(DOCS_DIR) or not os.listdir(DOCS_DIR):
@@ -279,6 +308,12 @@ def explain_event(payload: ExplainPayload):
                 if u.startswith(pu):
                     response_text = response_text[len(pref):].strip()
 
+        # Log received client prompt (system + starter) vs RAG-enriched LLM prompt.
+        received_log = starter
+        if system:
+            received_log = f"system:\n{system}\n\nprompt:\n{starter}"
+        _append_text_log(received_log, full_prompt, response_text)
+
         return {
             "status": "success",
             "explanation": response_text,
@@ -294,7 +329,30 @@ def explain_event(payload: ExplainPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Explain Service - Starter LLM Engine")
+    p.add_argument(
+        "--log-text",
+        metavar="FILE",
+        default=os.environ.get("EXPLAIN_LOG_TEXT") or None,
+        help="Append each /explain iteration (timestamp, received, llm_prompt, response) to FILE",
+    )
+    p.add_argument("--host", default="0.0.0.0", help="Bind host (default 0.0.0.0)")
+    p.add_argument("--port", type=int, default=5001, help="Bind port (default 5001)")
+    return p.parse_args(argv)
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=5001)
+    args = _parse_args()
+    LOG_TEXT_PATH = args.log_text
+    if LOG_TEXT_PATH:
+        parent = os.path.dirname(LOG_TEXT_PATH)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        print(f"log_text={LOG_TEXT_PATH}", flush=True)
+    else:
+        print("log_text=(none)", flush=True)
+
+    uvicorn.run(app, host=args.host, port=args.port)

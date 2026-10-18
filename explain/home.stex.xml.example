@@ -8,7 +8,7 @@
   <core host="127.0.0.1" port="17373"/>
 
   <llm url="http://127.0.0.1:5001/explain"
-       model="qwen2.5:3b"
+       model="qwen2.5:7b"
        timeout-ms="30000"
        max-queue="4"
        num-predict="32"

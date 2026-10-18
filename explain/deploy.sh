@@ -26,6 +26,7 @@ fi
 
 RAG_DOCS_HOST="${EXPLAIN_DATA:+${EXPLAIN_DATA}/llm/rag_docs}"
 CHROMA_HOST="${EXPLAIN_DATA:+${EXPLAIN_DATA}/llm/chroma_db}"
+LOGS_HOST="${EXPLAIN_DATA:+${EXPLAIN_DATA}/llm/logs}"
 VOICES_HOST="${EXPLAIN_DATA:+${EXPLAIN_DATA}/tts/voices}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -52,7 +53,7 @@ run_priv() {
   fi
 }
 
-run_priv mkdir -p "${RAG_DOCS_HOST}" "${CHROMA_HOST}" "${VOICES_HOST}"
+run_priv mkdir -p "${RAG_DOCS_HOST}" "${CHROMA_HOST}" "${LOGS_HOST}" "${VOICES_HOST}"
 
 RAG_SRC=""
 if [[ -d "${SITE_DIR}/explain/rag_docs" ]]; then

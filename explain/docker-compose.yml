@@ -38,9 +38,14 @@ services:
     container_name: explain_service
     restart: always
     network_mode: "host"
+    command:
+      - python3
+      - app.py
+      - --log-text=/var/log/explain/explain-text.log
     volumes:
       - ${EXPLAIN_DATA_ROOT}/llm/rag_docs:/app/docs
       - ${EXPLAIN_DATA_ROOT}/llm/chroma_db:/app/chroma_db
+      - ${EXPLAIN_DATA_ROOT}/llm/logs:/var/log/explain
     depends_on:
       - ollama
 
