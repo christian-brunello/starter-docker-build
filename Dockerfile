@@ -58,6 +58,8 @@ ARG STARTER_PARAMETERS_PLUGIN_REPO=https://github.com/christian-brunello/starter
 ARG STARTER_PARAMETERS_PLUGIN_COMMIT
 ARG STARTER_EXPLAIN_REPO=https://github.com/christian-brunello/starter-explain.git
 ARG STARTER_EXPLAIN_COMMIT
+ARG STARTER_HTTP_BRIDGE_REPO=https://github.com/christian-brunello/starter-http-bridge.git
+ARG STARTER_HTTP_BRIDGE_COMMIT
 
 # --- starter-core (with remote debug server for starter-debugger) ---
 RUN git clone --filter=blob:none "${STARTER_CORE_REPO}" starter-core \
@@ -136,6 +138,16 @@ RUN git clone --filter=blob:none "${STARTER_PARAMETERS_PLUGIN_REPO}" stca-plugin
 RUN git clone --filter=blob:none "${STARTER_EXPLAIN_REPO}" starter-explain \
     && cd starter-explain \
     && git checkout "${STARTER_EXPLAIN_COMMIT}" \
+    && ./autogen.sh \
+    && ./configure --prefix="${PREFIX}" \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# --- starter-http-bridge (peer I/O + JSON REST; depends on starter-core) ---
+RUN git clone --filter=blob:none "${STARTER_HTTP_BRIDGE_REPO}" starter-http-bridge \
+    && cd starter-http-bridge \
+    && git checkout "${STARTER_HTTP_BRIDGE_COMMIT}" \
     && ./autogen.sh \
     && ./configure --prefix="${PREFIX}" \
     && make -j"$(nproc)" \

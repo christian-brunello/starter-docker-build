@@ -28,7 +28,9 @@ required=(
     STARTER_ARISTON_PLUGIN_REPO STARTER_ARISTON_PLUGIN_COMMIT
     STARTER_PARAMETERS_PLUGIN_REPO STARTER_PARAMETERS_PLUGIN_COMMIT
     STARTER_EXPLAIN_REPO STARTER_EXPLAIN_COMMIT
+    STARTER_HTTP_BRIDGE_REPO STARTER_HTTP_BRIDGE_COMMIT
 )
+
 for var in "${required[@]}"; do
     if [[ -z "${!var:-}" ]]; then
         echo "error: ${var} is empty in versions.env" >&2
@@ -45,6 +47,7 @@ echo "  starter-configurable-adapter @ ${STARTER_CONFIGURABLE_ADAPTER_COMMIT}"
 echo "  ariston plugin @ ${STARTER_ARISTON_PLUGIN_COMMIT}"
 echo "  parameters plugin @ ${STARTER_PARAMETERS_PLUGIN_COMMIT}"
 echo "  starter-explain @ ${STARTER_EXPLAIN_COMMIT}"
+echo "  starter-http-bridge @ ${STARTER_HTTP_BRIDGE_COMMIT}"
 
 DOCKER_BUILDKIT=1 docker build \
     -t "${IMAGE_TAG}" \
@@ -64,6 +67,8 @@ DOCKER_BUILDKIT=1 docker build \
     --build-arg "STARTER_PARAMETERS_PLUGIN_COMMIT=${STARTER_PARAMETERS_PLUGIN_COMMIT}" \
     --build-arg "STARTER_EXPLAIN_REPO=${STARTER_EXPLAIN_REPO}" \
     --build-arg "STARTER_EXPLAIN_COMMIT=${STARTER_EXPLAIN_COMMIT}" \
+    --build-arg "STARTER_HTTP_BRIDGE_REPO=${STARTER_HTTP_BRIDGE_REPO}" \
+    --build-arg "STARTER_HTTP_BRIDGE_COMMIT=${STARTER_HTTP_BRIDGE_COMMIT}" \
     "$@" \
     .
 
