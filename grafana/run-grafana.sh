@@ -56,6 +56,8 @@ run_args=(
   # House wall display: allow unauthenticated Viewer (login form still works for admin).
   -e "GF_AUTH_ANONYMOUS_ENABLED=${GF_AUTH_ANONYMOUS_ENABLED:-true}"
   -e "GF_AUTH_ANONYMOUS_ORG_ROLE=${GF_AUTH_ANONYMOUS_ORG_ROLE:-Viewer}"
+  # Allow iframe embeds from web-ui (:18767) and other LAN origins.
+  -e "GF_SECURITY_ALLOW_EMBEDDING=${GF_SECURITY_ALLOW_EMBEDDING:-true}"
   -v "${DATA}:/var/lib/grafana"
 )
 

@@ -40,6 +40,7 @@ seed_home() {
     install -d -o starter -g starter -m 755 /home/starter
     install -d -o starter -g starter -m 700 /home/starter/.config /home/starter/.cache \
         /home/starter/.config/dconf /home/starter/.cache/dconf || true
+    install -d -o starter -g starter -m 755 /home/starter/web-ui || true
 }
 
 seed_etc

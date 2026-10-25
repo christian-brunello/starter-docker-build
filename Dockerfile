@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libjson-glib-dev \
         libsoup-3.0-dev \
         libsqlite3-dev \
+        guile-2.2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -60,6 +61,8 @@ ARG STARTER_EXPLAIN_REPO=https://github.com/christian-brunello/starter-explain.g
 ARG STARTER_EXPLAIN_COMMIT
 ARG STARTER_HTTP_BRIDGE_REPO=https://github.com/christian-brunello/starter-http-bridge.git
 ARG STARTER_HTTP_BRIDGE_COMMIT
+ARG STARTER_WEB_UI_REPO=https://github.com/christian-brunello/starter-web-ui.git
+ARG STARTER_WEB_UI_COMMIT
 
 # --- starter-core (with remote debug server for starter-debugger) ---
 RUN git clone --filter=blob:none "${STARTER_CORE_REPO}" starter-core \
@@ -154,6 +157,16 @@ RUN git clone --filter=blob:none "${STARTER_HTTP_BRIDGE_REPO}" starter-http-brid
     && make install \
     && ldconfig
 
+# --- starter-web-ui (Guile dashboard; depends on soup/guile/mysql) ---
+RUN git clone --filter=blob:none "${STARTER_WEB_UI_REPO}" starter-web-ui \
+    && cd starter-web-ui \
+    && git checkout "${STARTER_WEB_UI_COMMIT}" \
+    && ./autogen.sh \
+    && ./configure --prefix="${PREFIX}" \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
 # ---------------------------------------------------------------------------
 # runtime
 # ---------------------------------------------------------------------------
@@ -183,6 +196,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libjson-glib-1.0-0 \
         libsoup-3.0-0 \
         libsqlite3-0 \
+        guile-2.2 \
         mysql-client \
         supervisor \
         pulseaudio-utils \

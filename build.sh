@@ -29,6 +29,7 @@ required=(
     STARTER_PARAMETERS_PLUGIN_REPO STARTER_PARAMETERS_PLUGIN_COMMIT
     STARTER_EXPLAIN_REPO STARTER_EXPLAIN_COMMIT
     STARTER_HTTP_BRIDGE_REPO STARTER_HTTP_BRIDGE_COMMIT
+    STARTER_WEB_UI_REPO STARTER_WEB_UI_COMMIT
 )
 
 for var in "${required[@]}"; do
@@ -48,6 +49,7 @@ echo "  ariston plugin @ ${STARTER_ARISTON_PLUGIN_COMMIT}"
 echo "  parameters plugin @ ${STARTER_PARAMETERS_PLUGIN_COMMIT}"
 echo "  starter-explain @ ${STARTER_EXPLAIN_COMMIT}"
 echo "  starter-http-bridge @ ${STARTER_HTTP_BRIDGE_COMMIT}"
+echo "  starter-web-ui @ ${STARTER_WEB_UI_COMMIT}"
 
 DOCKER_BUILDKIT=1 docker build \
     -t "${IMAGE_TAG}" \
@@ -69,6 +71,8 @@ DOCKER_BUILDKIT=1 docker build \
     --build-arg "STARTER_EXPLAIN_COMMIT=${STARTER_EXPLAIN_COMMIT}" \
     --build-arg "STARTER_HTTP_BRIDGE_REPO=${STARTER_HTTP_BRIDGE_REPO}" \
     --build-arg "STARTER_HTTP_BRIDGE_COMMIT=${STARTER_HTTP_BRIDGE_COMMIT}" \
+    --build-arg "STARTER_WEB_UI_REPO=${STARTER_WEB_UI_REPO}" \
+    --build-arg "STARTER_WEB_UI_COMMIT=${STARTER_WEB_UI_COMMIT}" \
     "$@" \
     .
 
